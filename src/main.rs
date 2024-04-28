@@ -4,14 +4,22 @@ extern crate rocket;
 
 use std::collections::HashMap;
 use std::fs::DirEntry;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{env, fs, mem, path, thread};
 
 use bitcoin::PublicKey;
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use chrono::Utc;
+use dotenv::dotenv;
 use libp2p::identity::Keypair;
 use libp2p::PeerId;
+use moksha_wallet::localstore::sqlite::SqliteLocalStore;
+use moksha_wallet::wallet::WalletBuilder;
+use mokshamint::config::{DatabaseConfig, LightningFeeConfig};
+use mokshamint::lightning::LightningType;
+use mokshamint::lightning::lnd::LndLightningSettings;
+use mokshamint::mint::MintBuilder;
+use mokshamint::server::run_server;
 use openssl::pkey::{Private, Public};
 use openssl::rsa;
 use openssl::rsa::{Padding, Rsa};
@@ -21,6 +29,8 @@ use rocket::serde::{Deserialize, Serialize};
 use rocket::yansi::Paint;
 use rocket::{Build, Rocket};
 use rocket_dyn_templates::Template;
+use tokio::spawn;
+use url::Url;
 
 use crate::blockchain::{
     start_blockchain_for_new_bill, Block, Chain, ChainToReturn, OperationCode,
@@ -51,6 +61,8 @@ async fn main() {
     env_logger::init();
 
     init_folders();
+
+    init_mint().await;
 
     let mut dht = dht::dht_main().await.expect("DHT failed to start");
 
@@ -134,6 +146,69 @@ fn rocket_main(dht: Client) -> Rocket<Build> {
     open::that("http://127.0.0.1:8000/bitcredit/").expect("Can't open browser.");
 
     rocket
+}
+
+async fn init_mint() {
+    dotenv().ok();
+
+    let lnd_settings = envy::prefixed("LND_")
+        .from_env::<LndLightningSettings>()
+        .expect("Please provide lnd info");
+
+    let ln_type = LightningType::Lnd(lnd_settings);
+
+    // let lnbits_settings = envy::prefixed("LNBITS_")
+    //     .from_env::<LnbitsLightningSettings>()
+    //     .expect("Please provide lnd info");
+    //
+    // let ln_type = LightningType::Lnbits(lnbits_settings);
+
+    let lighting_fee_config = LightningFeeConfig {
+        fee_percent: 0f32,
+        fee_reserve_min: 4000
+    };
+
+    let database_config = DatabaseConfig {
+        db_url: "postgres://postgres:postgres@localhost:5432/moksha-mint".to_string()
+    };
+
+    let mint = MintBuilder::new()
+        .with_db(database_config)
+        .with_fee(Some(lighting_fee_config))
+        .with_lightning(ln_type)
+        .with_private_key("my_private_key".to_string())
+        .build()
+        .await;
+
+}
+
+async fn init_wallet() {
+    let dir = PathBuf::from("./data/wallet".to_string());
+    if !dir.exists() {
+        fs::create_dir_all(dir.clone()).unwrap();
+    }
+    let db_path = dir.join("wallet.db").to_str().unwrap().to_string();
+
+    let localstore = SqliteLocalStore::with_path(db_path.clone())
+        .await
+        .expect("Cannot parse local store");
+    localstore.migrate().await;
+    let client = HttpClient::default();
+
+    //TODO: take from params
+    let mint_url = Url::parse("http://127.0.0.1:3338").expect("Invalid url");
+
+    let identity: Identity = read_identity_from_file();
+    let bitcoin_key = identity.bitcoin_public_key.clone();
+
+    let wallet = WalletBuilder::default()
+        .with_client(client)
+        .with_localstore(localstore)
+        .with_mint_url(mint_url)
+        .with_key(bitcoin_key)
+        .build()
+        .await
+        .expect("Could not create wallet");
 }
 
 fn init_folders() {

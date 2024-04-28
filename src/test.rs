@@ -5,8 +5,14 @@ mod test {
     use std::{fs, mem};
 
     use bitcoin::secp256k1::Scalar;
+    use dotenv::dotenv;
     use libp2p::identity::Keypair;
     use libp2p::PeerId;
+    use mokshamint::config::{DatabaseConfig, LightningFeeConfig};
+    use mokshamint::lightning::LightningType;
+    use mokshamint::lightning::lnd::LndLightningSettings;
+    use mokshamint::mint::MintBuilder;
+    use mokshamint::server::run_server;
     use openssl::rsa::{Padding, Rsa};
     use serde_derive::Deserialize;
 
@@ -501,5 +507,35 @@ mod test {
     fn numbers_to_letters() {
         let result = encode(&123_324_324);
         assert_eq!("one hundred twenty-three million three hundred twenty-four thousand three hundred twenty-four".to_string(), result);
+    }
+
+    #[tokio::test]
+    async fn run_lnd_local_mint() -> anyhow::Result<()> {
+        dotenv().ok();
+
+        let lnd_settings = envy::prefixed("LND_")
+            .from_env::<LndLightningSettings>()
+            .expect("Please provide lnd info");
+
+        let ln_type = LightningType::Lnd(lnd_settings);
+
+        let lighting_fee_config = LightningFeeConfig {
+            fee_percent: 0f32,
+            fee_reserve_min: 4000
+        };
+
+        let database_config = DatabaseConfig {
+            db_url: "postgres://postgres:postgres@localhost:5432/moksha-mint".to_string()
+        };
+
+        let mint = MintBuilder::new()
+            .with_db(database_config)
+            .with_fee(Some(lighting_fee_config))
+            .with_lightning(ln_type)
+            .with_private_key("my_private_key".to_string())
+            .build()
+            .await;
+
+        run_server(mint?).await
     }
 }
