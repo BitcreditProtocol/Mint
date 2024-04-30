@@ -13,8 +13,9 @@ use chrono::Utc;
 use dotenv::dotenv;
 use libp2p::identity::Keypair;
 use libp2p::PeerId;
+use moksha_wallet::http::CrossPlatformHttpClient;
 use moksha_wallet::localstore::sqlite::SqliteLocalStore;
-use moksha_wallet::wallet::WalletBuilder;
+use moksha_wallet::wallet::{Wallet, WalletBuilder};
 use mokshamint::config::{DatabaseConfig, LightningFeeConfig};
 use mokshamint::lightning::LightningType;
 use mokshamint::lightning::lnd::LndLightningSettings;
@@ -192,8 +193,6 @@ async fn init_wallet() {
     let localstore = SqliteLocalStore::with_path(db_path.clone())
         .await
         .expect("Cannot parse local store");
-    localstore.migrate().await;
-    let client = HttpClient::default();
 
     //TODO: take from params
     let mint_url = Url::parse("http://127.0.0.1:3338").expect("Invalid url");
@@ -201,11 +200,9 @@ async fn init_wallet() {
     let identity: Identity = read_identity_from_file();
     let bitcoin_key = identity.bitcoin_public_key.clone();
 
-    let wallet = WalletBuilder::default()
-        .with_client(client)
+    let wallet: Wallet<_, CrossPlatformHttpClient> = Wallet::builder()
         .with_localstore(localstore)
         .with_mint_url(mint_url)
-        .with_key(bitcoin_key)
         .build()
         .await
         .expect("Could not create wallet");
