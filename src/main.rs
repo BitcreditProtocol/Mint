@@ -17,8 +17,8 @@ use moksha_wallet::http::CrossPlatformHttpClient;
 use moksha_wallet::localstore::sqlite::SqliteLocalStore;
 use moksha_wallet::wallet::{Wallet, WalletBuilder};
 use mokshamint::config::{DatabaseConfig, LightningFeeConfig};
-use mokshamint::lightning::LightningType;
 use mokshamint::lightning::lnd::LndLightningSettings;
+use mokshamint::lightning::LightningType;
 use mokshamint::mint::MintBuilder;
 use mokshamint::server::run_server;
 use openssl::pkey::{Private, Public};
@@ -59,7 +59,7 @@ mod web;
 async fn main() {
     env::set_var("RUST_BACKTRACE", "full");
 
-    env_logger::init();
+    dotenv().ok();
 
     init_folders();
 
@@ -150,27 +150,19 @@ fn rocket_main(dht: Client) -> Rocket<Build> {
 }
 
 async fn init_mint() {
-    dotenv().ok();
-
     let lnd_settings = envy::prefixed("LND_")
         .from_env::<LndLightningSettings>()
         .expect("Please provide lnd info");
 
     let ln_type = LightningType::Lnd(lnd_settings);
 
-    // let lnbits_settings = envy::prefixed("LNBITS_")
-    //     .from_env::<LnbitsLightningSettings>()
-    //     .expect("Please provide lnd info");
-    //
-    // let ln_type = LightningType::Lnbits(lnbits_settings);
-
     let lighting_fee_config = LightningFeeConfig {
         fee_percent: 0f32,
-        fee_reserve_min: 4000
+        fee_reserve_min: 4000,
     };
 
     let database_config = DatabaseConfig {
-        db_url: "postgres://postgres:postgres@localhost:5432/moksha-mint".to_string()
+        db_url: "postgres://postgres:postgres@localhost:5432/moksha-mint".to_string(),
     };
 
     let mint = MintBuilder::new()
@@ -179,33 +171,10 @@ async fn init_mint() {
         .with_lightning(ln_type)
         .with_private_key("my_private_key".to_string())
         .build()
-        .await;
-
-}
-
-async fn init_wallet() {
-    let dir = PathBuf::from("./data/wallet".to_string());
-    if !dir.exists() {
-        fs::create_dir_all(dir.clone()).unwrap();
-    }
-    let db_path = dir.join("wallet.db").to_str().unwrap().to_string();
-
-    let localstore = SqliteLocalStore::with_path(db_path.clone())
         .await
-        .expect("Cannot parse local store");
+        .expect("Can't create mint");
 
-    //TODO: take from params
-    let mint_url = Url::parse("http://127.0.0.1:3338").expect("Invalid url");
-
-    let identity: Identity = read_identity_from_file();
-    let bitcoin_key = identity.bitcoin_public_key.clone();
-
-    let wallet: Wallet<_, CrossPlatformHttpClient> = Wallet::builder()
-        .with_localstore(localstore)
-        .with_mint_url(mint_url)
-        .build()
-        .await
-        .expect("Could not create wallet");
+    spawn(run_server(mint));
 }
 
 fn init_folders() {
@@ -233,6 +202,31 @@ fn init_folders() {
     if !Path::new(BOOTSTRAP_FOLDER_PATH).exists() {
         fs::create_dir(BOOTSTRAP_FOLDER_PATH).expect("Can't create folder bootstrap.");
     }
+}
+
+async fn init_wallet() {
+    let dir = PathBuf::from("./data/wallet".to_string());
+    if !dir.exists() {
+        fs::create_dir_all(dir.clone()).unwrap();
+    }
+    let db_path = dir.join("wallet.db").to_str().unwrap().to_string();
+
+    let localstore = SqliteLocalStore::with_path(db_path.clone())
+        .await
+        .expect("Cannot parse local store");
+
+    //TODO: take from params
+    let mint_url = Url::parse("http://127.0.0.1:3338").expect("Invalid url");
+
+    let identity: Identity = read_identity_from_file();
+    let bitcoin_key = identity.bitcoin_public_key.clone();
+
+    let wallet: Wallet<_, CrossPlatformHttpClient> = Wallet::builder()
+        .with_localstore(localstore)
+        .with_mint_url(mint_url)
+        .build()
+        .await
+        .expect("Could not create wallet");
 }
 
 //-------------------------Contacts map-------------------------
@@ -690,21 +684,18 @@ impl Identity {
     }
 
     fn all_changeable_fields_empty(&self) -> bool {
-        self.name == "" &&
-        self.company == "" &&
-        self.postal_address == "" &&
-        self.email == ""
+        self.name == "" && self.company == "" && self.postal_address == "" && self.email == ""
     }
 
     fn all_changeable_fields_equal_to(&self, other: &Self) -> bool {
-        self.name == other.name && 
-        self.company == other.company &&
-        self.postal_address == other.postal_address &&
-        self.email == other.email
+        self.name == other.name
+            && self.company == other.company
+            && self.postal_address == other.postal_address
+            && self.email == other.email
     }
-   
+
     fn update_valid(&self, other: &Self) -> bool {
-        if other.all_changeable_fields_empty() { 
+        if other.all_changeable_fields_empty() {
             return false;
         }
         if self.all_changeable_fields_equal_to(other) {
@@ -1389,12 +1380,16 @@ pub fn endorse_bitcredit_bill(
     let exist_block_with_code_endorse =
         blockchain_from_file.exist_block_with_operation_code(OperationCode::Endorse);
 
+    let exist_block_with_code_mint =
+        blockchain_from_file.exist_block_with_operation_code(OperationCode::Mint);
+
     let exist_block_with_code_sell =
         blockchain_from_file.exist_block_with_operation_code(OperationCode::Sell);
 
     if (my_peer_id.eq(&bill.payee.peer_id)
         && !exist_block_with_code_endorse
-        && !exist_block_with_code_sell)
+        && !exist_block_with_code_sell
+        && !exist_block_with_code_mint)
         || (my_peer_id.eq(&bill.endorsee.peer_id))
     {
         let identity = get_whole_identity();
@@ -1518,12 +1513,16 @@ pub fn request_pay(bill_name: &String, timestamp: i64) -> bool {
     let exist_block_with_code_endorse =
         blockchain_from_file.exist_block_with_operation_code(OperationCode::Endorse);
 
+    let exist_block_with_code_mint =
+        blockchain_from_file.exist_block_with_operation_code(OperationCode::Mint);
+
     let exist_block_with_code_sell =
         blockchain_from_file.exist_block_with_operation_code(OperationCode::Sell);
 
     if (my_peer_id.eq(&bill.payee.peer_id)
         && !exist_block_with_code_endorse
-        && !exist_block_with_code_sell)
+        && !exist_block_with_code_sell
+        && !exist_block_with_code_mint)
         || (my_peer_id.eq(&bill.endorsee.peer_id))
     {
         let identity = get_whole_identity();
@@ -1579,9 +1578,13 @@ pub fn request_acceptance(bill_name: &String, timestamp: i64) -> bool {
     let exist_block_with_code_sell =
         blockchain_from_file.exist_block_with_operation_code(OperationCode::Sell);
 
+    let exist_block_with_code_mint =
+        blockchain_from_file.exist_block_with_operation_code(OperationCode::Mint);
+
     if (my_peer_id.eq(&bill.payee.peer_id)
         && !exist_block_with_code_endorse
-        && !exist_block_with_code_sell)
+        && !exist_block_with_code_sell
+        && !exist_block_with_code_mint)
         || (my_peer_id.eq(&bill.endorsee.peer_id))
     {
         let identity = get_whole_identity();

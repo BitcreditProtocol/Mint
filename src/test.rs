@@ -13,8 +13,8 @@ mod test {
     use moksha_wallet::localstore::sqlite::SqliteLocalStore;
     use moksha_wallet::wallet::{Wallet, WalletBuilder};
     use mokshamint::config::{DatabaseConfig, LightningFeeConfig};
-    use mokshamint::lightning::LightningType;
     use mokshamint::lightning::lnd::LndLightningSettings;
+    use mokshamint::lightning::LightningType;
     use mokshamint::mint::MintBuilder;
     use mokshamint::server::run_server;
     use openssl::rsa::{Padding, Rsa};
@@ -22,7 +22,10 @@ mod test {
     use url::Url;
 
     use crate::numbers_to_words::encode;
-    use crate::{byte_array_to_size_array_keypair, byte_array_to_size_array_peer_id, create_new_identity, generation_rsa_key, Identity, read_identity_from_file, structure_as_u8_slice};
+    use crate::{
+        byte_array_to_size_array_keypair, byte_array_to_size_array_peer_id, create_new_identity,
+        generation_rsa_key, read_identity_from_file, structure_as_u8_slice, Identity,
+    };
 
     //TODO: Change. Because we create new bill every time we run tests
 
@@ -523,11 +526,11 @@ mod test {
 
         let lighting_fee_config = LightningFeeConfig {
             fee_percent: 0f32,
-            fee_reserve_min: 4000
+            fee_reserve_min: 4000,
         };
 
         let database_config = DatabaseConfig {
-            db_url: "postgres://postgres:postgres@localhost:5432/moksha-mint".to_string()
+            db_url: "postgres://postgres:postgres@localhost:5432/moksha-mint".to_string(),
         };
 
         let mint = MintBuilder::new()
@@ -647,7 +650,6 @@ mod test {
             .build()
             .await
             .expect("Could not create wallet");
-
 
         let result = wallet.send_tokens(10).await.expect("Cannot send tokens");
         let payment_invoice: String = result.try_into().unwrap();

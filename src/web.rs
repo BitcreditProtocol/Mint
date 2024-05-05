@@ -24,11 +24,11 @@ use crate::{
     get_whole_identity, issue_new_bill, issue_new_bill_drawer_is_drawee,
     issue_new_bill_drawer_is_payee, read_bill_from_file, read_contacts_map,
     read_identity_from_file, read_peer_id_from_file, request_acceptance, request_pay,
-    sell_bitcredit_bill, write_identity_to_file, AcceptBitcreditBillForm, BitcreditBill, BitcreditBillForList,
-    BitcreditBillForm, BitcreditBillToReturn, Contact, DeleteContactForm, EditContactForm,
-    EndorseBitcreditBillForm, Identity, IdentityForm, IdentityPublicData, IdentityWithAll,
-    NewContactForm, NodeId, RequestToAcceptBitcreditBillForm, RequestToPayBitcreditBillForm,
-    SellBitcreditBillForm,
+    sell_bitcredit_bill, write_identity_to_file, AcceptBitcreditBillForm, BitcreditBill,
+    BitcreditBillForList, BitcreditBillForm, BitcreditBillToReturn, Contact, DeleteContactForm,
+    EditContactForm, EndorseBitcreditBillForm, Identity, IdentityForm, IdentityPublicData,
+    IdentityWithAll, NewContactForm, NodeId, RequestToAcceptBitcreditBillForm,
+    RequestToPayBitcreditBillForm, SellBitcreditBillForm,
 };
 
 use self::handlebars::{Handlebars, JsonRender};
@@ -151,7 +151,6 @@ pub async fn change_identity(identity_form: Form<IdentityForm>, state: &State<Cl
         return Status::NotAcceptable;
     }
     my_identity = read_identity_from_file();
-
 
     if !my_identity.update_valid(&identity_changes) {
         return Status::NotAcceptable;
