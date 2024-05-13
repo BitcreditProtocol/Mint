@@ -32,10 +32,11 @@ async fn init_mint() -> anyhow::Result<()> {
 
     let database_config = DatabaseConfig {
         db_url: "postgres://postgres:postgres@localhost:5432/moksha-mint".to_string(),
+        max_connections: 1,
     };
 
     let mint = MintBuilder::new()
-        .with_db(database_config)
+        .with_db(Option::from(database_config))
         .with_fee(Some(lighting_fee_config))
         .with_lightning(ln_type)
         .with_private_key("my_private_key".to_string())
